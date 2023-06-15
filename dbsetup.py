@@ -3,6 +3,7 @@ import sqlalchemy as db
 from fastapi import HTTPException
 from sqlalchemy.exc import OperationalError
 from config import settings
+from logger import logger
 
 from sqlalchemy.orm import sessionmaker, declarative_base, Session
 
@@ -23,9 +24,10 @@ def safe_db_connect(db: Session):
         yield db
     except OperationalError as exc:
         if settings.environment == "dev":
-            err_message = exc._message
+            err_message = f"may need to run [python dbsetup.py -m up] -> {exc._message}"
         else:
             err_message = "contact admin for help"
+        logger.error(err_message)
         raise HTTPException(
             status_code=424, detail={"error": f"Problem with db: {err_message}"}
         )

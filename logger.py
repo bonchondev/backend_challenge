@@ -1,6 +1,7 @@
 import logging
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
+from config import settings
 
 
 def create_logger(filename, log_name, log_level=logging.DEBUG):
@@ -23,4 +24,4 @@ def create_logger(filename, log_name, log_level=logging.DEBUG):
 
     return logger
 
-logger = create_logger(filename="truck_req.log", log_name="truck_logger")
+logger = create_logger(filename=settings.log_filename, log_name="truck_logger", log_level=settings.log_level)

@@ -3,7 +3,7 @@ from fastapi import FastAPI, Request, Response, Query
 from fastapi.routing import APIRoute
 from fastapi import HTTPException
 from pydantic import BaseSettings, ValidationError
-from pydantic.fields import Field
+from logging import INFO
 
 
 class ValidationErrorLoggingRoute(APIRoute):
@@ -29,6 +29,10 @@ def alphanumeric_query_validation(vin:Annotated[str, Query(min_length=17,max_len
 class Settings(BaseSettings):
     environment: Literal['dev', 'prod', 'staging'] = 'dev'
     version: str = "1.0.0"
+    log_filename: str = "truck_req.log"
+    log_level: int = INFO
+    parquet_name: str = "trucks.parquet"
+    export_location: str = "exports"
 
 settings = Settings()
 

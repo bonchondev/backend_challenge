@@ -8,7 +8,8 @@ from sqlalchemy.orm import Session
 from apimodels import TruckResponse, VinNumber
 from dbsetup import SessionLocal, safe_db_connect
 from models import TruckDB
-from config import alphanumeric_query_validation, init_app
+from config import alphanumeric_query_validation, init_app, settings
+from logger import logger
 import requests
 
 app = init_app()
@@ -40,10 +41,12 @@ async def lookup_vin(
         api_res = api_request.json()["Results"][0]
     except JSONDecodeError:
         detail = {"errors": f"Couldn't jsonify response, problem with VIN"}
+        logger.error(detail)
         raise HTTPException(status_code=400, detail=detail)
 
     if api_res["ErrorCode"] != "0":
         detail = {"errors": api_res["ErrorText"]}
+        logger.error(detail)
         raise HTTPException(status_code=400, detail=detail)
 
     truck_res = TruckResponse(
@@ -66,6 +69,7 @@ async def remove_vin(req: VinNumber, sess: Session = Depends(get_db)):
     with safe_db_connect(sess) as db:
         truck_data = db.query(TruckDB).filter_by(vin=req.vin).first()
     if truck_data is None:
+        logger.debug("no vin number found")
         raise HTTPException(status_code=404, detail={"error": "Vin Number not found"})
 
     truck_data.delete(db)
@@ -82,12 +86,13 @@ async def export_data(sess: Session = Depends(get_db)):
 
     parq_table = pa.Table.from_pylist(truck_json_list)
 
-    parq_save_location = Path(".") / "exports"
+    parq_save_location = Path(".") / settings.export_location
 
     if not parq_save_location.exists():
+        logger.info("created export location")
         parq_save_location.mkdir()
 
-    parq_file = parq_save_location / "trucks.parquet"
+    parq_file = parq_save_location / settings.parquet_name
 
     pq.write_table(parq_table, parq_file)
 
