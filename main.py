@@ -1,22 +1,29 @@
 from pathlib import Path
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, HTTPException
 from fastapi.responses import FileResponse
-from config import ValidationErrorLoggingRoute
-from models import Truck, VinNumber
-from cache import TruckRequests, session
+from sqlalchemy.orm import Session
+from models import TruckResponse, VinNumber
+from cache import SessionLocal, TruckDB
+from config import init_app
 import requests
 
+app = init_app()
 
-app = FastAPI()
-app.router.route_class = ValidationErrorLoggingRoute
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
 
 
 @app.get("/lookup")
-async def lookup_vin(req: VinNumber) -> Truck:
-    truck_data = session.query(TruckRequests).filter_by(vin=req.vin).first()
+async def lookup_vin(req: VinNumber, db: Session = Depends(get_db)) -> TruckResponse:
+    truck_data = db.query(TruckDB).filter_by(vin=req.vin).first()
 
     if truck_data is not None:
-        return Truck(**truck_data.to_json())
+        return TruckResponse(**truck_data.to_json())
 
     api_request = requests.get(
         f"https://vpic.nhtsa.dot.gov/api/vehicles/decodevinvalues/{req.vin}?format=json"
@@ -26,9 +33,9 @@ async def lookup_vin(req: VinNumber) -> Truck:
 
     if api_res["ErrorCode"] != "0":
         detail = {"errors": api_res["ErrorText"]}
-        raise HTTPException(status_code=422, detail=detail)
+        raise HTTPException(status_code=400, detail=detail)
 
-    truck_res = Truck(
+    truck_res = TruckResponse(
         vin=req.vin,
         make=api_res["Make"],
         model_name=api_res["Model"],
@@ -36,27 +43,26 @@ async def lookup_vin(req: VinNumber) -> Truck:
         body_class=api_res["BodyClass"],
     )
 
-    truck_db_save = TruckRequests(
-        vin=truck_res.vin,
-        make=truck_res.make,
-        model_name=truck_res.model_name,
-        model_year=truck_res.model_year,
-        body_class=truck_res.body_class
-    )
+    truck_db = TruckDB(**truck_res.dict())
 
-    session.add(truck_db_save)
+    truck_db.save(db)
 
     return truck_res
 
 
-@app.get("/remove")
-def remove_vin(audio_type: str, data: str):
-    sound_file = Path(f"sounds/{audio_type}/{data}.mp3").exists()
-    if not sound_file:
-        raise HTTPException(status_code=404, detail="file not found")
-    return {"url": f"/audio/{audio_type}/{data}"}
+@app.post("/remove")
+def remove_vin(req: VinNumber, db: Session = Depends(get_db)):
+    truck_data = db.query(TruckDB).filter_by(vin=req.vin).first()
+    if truck_data is None:
+        raise HTTPException(status_code=404, detail={"error" : "Vin Number not found"})
+    truck_data.delete(db)
+    return {"vin": req.vin, "cache_deleted" : True}
 
 
 @app.get("/export")
-def export_data(audio_type: str, filename: str):
+def export_data(db: Session = Depends(get_db)):
+    """
+    Needs to export data as a parquet
+    """
     return FileResponse(f"sounds/{audio_type}/{filename}.mp3")
+

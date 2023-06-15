@@ -1,23 +1,19 @@
 from datetime import datetime
 import sqlalchemy as db
-from sqlalchemy.orm import sessionmaker, declarative_base
-from config import TruckDBConfig
+from sqlalchemy.orm import Session, sessionmaker, declarative_base
 
-Base = declarative_base()
-
-connection = "sqlite:///{dbname}".format(dbname=TruckDBConfig.name)
+connection = "sqlite:///{dbname}".format(dbname="truck.db")
 
 engine = db.create_engine(connection, connect_args={"check_same_thread": False})
 
-Session = sessionmaker()
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-Session.configure(bind=engine)
+Base = declarative_base()
 
-session = Session()
+Base.metadata.create_all(bind=engine)
 
-
-class TruckRequests(Base):
-    __tablename__ = "truck_requests"
+class TruckDB(Base):
+    __tablename__ = "truck_info"
     id = db.Column("id", db.Integer, primary_key=True)
     vin = db.Column("vin_number", db.String(17))
     make = db.Column("make", db.String(255))
@@ -25,6 +21,7 @@ class TruckRequests(Base):
     model_year = db.Column("model_year", db.String(255))
     body_class = db.Column("body_class", db.String(255))
     date = db.Column("date", db.DateTime, default=datetime.now())
+    cached = True
 
     def to_json(self):
         return {
@@ -33,14 +30,20 @@ class TruckRequests(Base):
             "model_name" : self.model_name,
             "model_year": self.model_year,
             "body_class": self.body_class,
-            "cached" : True
+            "cached" : self.cached
         }
 
-    def save(self):
-        ...
+    def save(self,db: Session):
+        db.add(self)
+        db.commit()
+        db.refresh(self)
+
+    def delete(self, db: Session):
+        db.delete(self)
+        db.commit()
 
     def __repr__(self):
-        return f"<Requests(user={self.id},complete={self.user_id})>"
+        return f"<TruckRequests(vin={self.vin},make={self.make})>"
 
 
 def create_table(model, engine=engine):
@@ -68,6 +71,6 @@ if __name__ == "__main__":
     parser.add_option("-m", "--migrate", type="choice", choices=["up", "down"],default="up")
     (options, args) = parser.parse_args()
     if options.migrate == "up":
-        create_table(TruckRequests)
+        create_table(TruckDB)
     if options.migrate == "down":
-        delete_table(TruckRequests)
+        delete_table(TruckDB)

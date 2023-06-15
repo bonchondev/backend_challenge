@@ -1,5 +1,5 @@
 from typing import Callable
-from fastapi import Request, Response
+from fastapi import FastAPI, Request, Response
 from fastapi.routing import APIRoute
 from fastapi import HTTPException
 from pydantic import ValidationError
@@ -20,5 +20,7 @@ class ValidationErrorLoggingRoute(APIRoute):
         return custom_route_handler
 
 
-class TruckDBConfig:
-    name = "db.sqlite3"
+def init_app():
+    app = FastAPI()
+    app.router.route_class = ValidationErrorLoggingRoute
+    return app
