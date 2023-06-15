@@ -1,7 +1,7 @@
 Backend Coding Challenge
 
 # Deployment
-1. Docker (docker build -t api . && docker container run api)
+1. Docker (docker build -t api . && docker container run -d -p 8000:8000 api)
 2. Locally run:
   - python3 -m venv env (python3.10 used)
   - source env/bin/activate
