@@ -1,10 +1,14 @@
 from pathlib import Path
+from json.decoder import JSONDecodeError
+import pyarrow as pa
+import pyarrow.parquet as pq
 from fastapi import Depends, HTTPException
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
-from models import TruckResponse, VinNumber
-from cache import SessionLocal, TruckDB
-from config import init_app
+from apimodels import TruckResponse, VinNumber
+from dbsetup import SessionLocal, safe_db_connect
+from models import TruckDB
+from config import alphanumeric_query_validation, init_app
 import requests
 
 app = init_app()
@@ -19,24 +23,31 @@ def get_db():
 
 
 @app.get("/lookup")
-async def lookup_vin(req: VinNumber, db: Session = Depends(get_db)) -> TruckResponse:
-    truck_data = db.query(TruckDB).filter_by(vin=req.vin).first()
+async def lookup_vin(
+    vin: str = Depends(alphanumeric_query_validation), sess: Session = Depends(get_db)
+) -> TruckResponse:
+    with safe_db_connect(sess) as db:
+        truck_data = db.query(TruckDB).filter_by(vin=vin).first()
 
     if truck_data is not None:
         return TruckResponse(**truck_data.to_json())
 
     api_request = requests.get(
-        f"https://vpic.nhtsa.dot.gov/api/vehicles/decodevinvalues/{req.vin}?format=json"
+        f"https://vpic.nhtsa.dot.gov/api/vehicles/decodevinvalues/{vin}?format=json"
     )
 
-    api_res = api_request.json()["Results"][0]
+    try:
+        api_res = api_request.json()["Results"][0]
+    except JSONDecodeError:
+        detail = {"errors": f"Couldn't jsonify response, problem with VIN"}
+        raise HTTPException(status_code=400, detail=detail)
 
     if api_res["ErrorCode"] != "0":
         detail = {"errors": api_res["ErrorText"]}
         raise HTTPException(status_code=400, detail=detail)
 
     truck_res = TruckResponse(
-        vin=req.vin,
+        vin=vin,
         make=api_res["Make"],
         model_name=api_res["Model"],
         model_year=api_res["ModelYear"],
@@ -51,18 +62,37 @@ async def lookup_vin(req: VinNumber, db: Session = Depends(get_db)) -> TruckResp
 
 
 @app.post("/remove")
-def remove_vin(req: VinNumber, db: Session = Depends(get_db)):
-    truck_data = db.query(TruckDB).filter_by(vin=req.vin).first()
+async def remove_vin(req: VinNumber, sess: Session = Depends(get_db)):
+    with safe_db_connect(sess) as db:
+        truck_data = db.query(TruckDB).filter_by(vin=req.vin).first()
     if truck_data is None:
-        raise HTTPException(status_code=404, detail={"error" : "Vin Number not found"})
+        raise HTTPException(status_code=404, detail={"error": "Vin Number not found"})
+
     truck_data.delete(db)
-    return {"vin": req.vin, "cache_deleted" : True}
+
+    return {"vin": req.vin, "cache_deleted": True}
 
 
 @app.get("/export")
-def export_data(db: Session = Depends(get_db)):
-    """
-    Needs to export data as a parquet
-    """
-    return FileResponse(f"sounds/{audio_type}/{filename}.mp3")
+async def export_data(sess: Session = Depends(get_db)):
+    with safe_db_connect(sess) as db:
+        all_truck_data = db.query(TruckDB).all()
 
+    truck_json_list = [data.to_json() for data in all_truck_data]
+
+    parq_table = pa.Table.from_pylist(truck_json_list)
+
+    parq_save_location = Path(".") / "exports"
+
+    if not parq_save_location.exists():
+        parq_save_location.mkdir()
+
+    parq_file = parq_save_location / "trucks.parquet"
+
+    pq.write_table(parq_table, parq_file)
+
+    return FileResponse(
+        parq_file,
+        media_type="application/x-parquet",
+        filename=parq_file.name,
+    )
