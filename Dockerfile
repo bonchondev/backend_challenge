@@ -6,7 +6,9 @@ COPY ./requirements.txt ./*.py /app/
 
 RUN pip install -r requirements.txt
 
-RUN python /app/dbsetup.py -m up
+RUN python /app/dbsetup.py -m up 
+
+RUN pytest
 
 EXPOSE 8000
 
