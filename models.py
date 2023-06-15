@@ -5,12 +5,11 @@ class VinNumber(BaseModel):
     vin: str = Field(min_length=17, max_length=17)
 
 
-class Truck(BaseModel):
-    vin: str = Field(min_length=17, max_length=17)
+class Truck(VinNumber):
     make: str
-    model: str
+    model_name: str
     model_year: str
-    body: str
+    body_class: str
     cached: bool = False
 
     @validator("vin")

@@ -13,17 +13,40 @@ app.router.route_class = ValidationErrorLoggingRoute
 
 @app.get("/lookup")
 async def lookup_vin(req: VinNumber) -> Truck:
-    truck_data = session.query(TruckRequests).filter_by(vin_number=req.vin).first()
-    print(truck_data)
-    test_truck = Truck(
-        vin=req.vin,
-        make="woah",
-        model="wo",
-        model_year="noway",
-        body="thereisn't",
-        cached=True,
+    truck_data = session.query(TruckRequests).filter_by(vin=req.vin).first()
+
+    if truck_data is not None:
+        return Truck(**truck_data.to_json())
+
+    api_request = requests.get(
+        f"https://vpic.nhtsa.dot.gov/api/vehicles/decodevinvalues/{req.vin}?format=json"
     )
-    return test_truck
+
+    api_res = api_request.json()["Results"][0]
+
+    if api_res["ErrorCode"] != "0":
+        detail = {"errors": api_res["ErrorText"]}
+        raise HTTPException(status_code=422, detail=detail)
+
+    truck_res = Truck(
+        vin=req.vin,
+        make=api_res["Make"],
+        model_name=api_res["Model"],
+        model_year=api_res["ModelYear"],
+        body_class=api_res["BodyClass"],
+    )
+
+    truck_db_save = TruckRequests(
+        vin=truck_res.vin,
+        make=truck_res.make,
+        model_name=truck_res.model_name,
+        model_year=truck_res.model_year,
+        body_class=truck_res.body_class
+    )
+
+    session.add(truck_db_save)
+
+    return truck_res
 
 
 @app.get("/remove")

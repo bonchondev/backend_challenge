@@ -19,12 +19,25 @@ session = Session()
 class TruckRequests(Base):
     __tablename__ = "truck_requests"
     id = db.Column("id", db.Integer, primary_key=True)
-    vin_number = db.Column("vin_number", db.String(17))
+    vin = db.Column("vin_number", db.String(17))
     make = db.Column("make", db.String(255))
     model_name = db.Column("model_name", db.String(255))
     model_year = db.Column("model_year", db.String(255))
     body_class = db.Column("body_class", db.String(255))
     date = db.Column("date", db.DateTime, default=datetime.now())
+
+    def to_json(self):
+        return {
+            "vin": self.vin,
+            "make": self.make,
+            "model_name" : self.model_name,
+            "model_year": self.model_year,
+            "body_class": self.body_class,
+            "cached" : True
+        }
+
+    def save(self):
+        ...
 
     def __repr__(self):
         return f"<Requests(user={self.id},complete={self.user_id})>"
